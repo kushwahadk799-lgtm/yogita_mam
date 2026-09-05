@@ -1,0 +1,156 @@
+name: Terraform
+
+on:
+  push:
+    branches:
+      - "**"
+
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  terraform-plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: environment
+
+    steps:
+
+      # ----------------------------------------------------------
+      # Checkout
+      # ----------------------------------------------------------
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+
+      # ----------------------------------------------------------
+      # Setup Terraform
+      # ----------------------------------------------------------
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+
+      # ----------------------------------------------------------
+      # 1. GITLEAKS - Secret Scanning
+      # ----------------------------------------------------------
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        continue-on-error: true
+
+
+      # ----------------------------------------------------------
+      # 2. TFLINT - Terraform Linting
+      # ----------------------------------------------------------
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+
+      - name: Run TFLint
+        run: |
+          tflint --init
+          tflint
+
+
+      # ----------------------------------------------------------
+      # 3. TFSEC - Terraform Security Scan
+      # ----------------------------------------------------------
+      - name: Run tfsec
+        uses: aquasecurity/tfsec-action@v1.0.3
+
+
+      # ----------------------------------------------------------
+      # 4. CHECKOV - IaC Security & Compliance
+      # ----------------------------------------------------------
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: environment
+          soft_fail: true
+     
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Azure Login
+        run: |
+         az login \
+            --service-principal \
+            --username "d53ca1d6-4476-41fa-802d-d033fc31ac3c" \
+            --password "mDJ8Q~1X5Uj2PTEM~PLQNWIh.XGz8DilGY4OLcIN" \
+            --tenant "e5953299-7b64-4bcb-96d5-242bdbc3b4b6"
+
+      - name: Set Azure Subscription
+        run: |
+          az account set \
+            --subscription "db4ce65a-407e-442f-907d-7b61d14f6fa1"
+
+      - name: Check Azure Login
+        run: az account show
+
+      - name: Terraform Format
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: terraform plan
+
+  terraform-apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+
+    needs: terraform-plan
+
+    # Apply ONLY after push to main
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    defaults:
+      run:
+        working-directory: environment
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Azure Login
+        run: |
+          az login \
+            --service-principal \
+            --username "d53ca1d6-4476-41fa-802d-d033fc31ac3c" \
+            --password "mDJ8Q~1X5Uj2PTEM~PLQNWIh.XGz8DilGY4OLcIN" \
+            --tenant "e5953299-7b64-4bcb-96d5-242bdbc3b4b6"
+
+      - name: Set Azure Subscription
+        run: |
+          az account set \
+            --subscription "db4ce65a-407e-442f-907d-7b61d14f6fa1"
+            
+      - name: Check Azure Login
+        run: az account show
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
